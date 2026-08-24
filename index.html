@@ -164,8 +164,8 @@ function onFileSelected(event) {
             excelHeaders = Object.keys(excelRows[0]);
             document.getElementById('mapPanel').style.display = 'block';
 
-            const gXuong  = findHeader(excelHeaders, ['công tơ mới', 'cong to moi', 'Công tơ mới']);
-            const gLen    = findHeader(excelHeaders, ['Công tơ', 'cong to', 'công tơ', 'Số công tơ']);
+            const gXuong  = findHeader(excelHeaders, ['công tơ mới', 'cong to moi', 'Công tơ mới', 'no mới']);
+            const gLen    = findHeader(excelHeaders, ['Công tơ', 'cong to', 'công tơ']);
             const gDiaChi = findHeader(excelHeaders, ['Địa chỉ', 'dia chi', 'Địa chỉ sử dụng điện', 'dia chi su dung dien']);
             const gPhone  = findHeader(excelHeaders, ['SĐT', 'Số điện thoại', 'sdt', 'dienthoai', 'phone', 'Điện thoại', 'dien thoai', 'Tel', 'Mobile', 'Số DT', 'so dt', 'SĐT KH', 'sdt kh']);
             const gMaTram = findHeader(excelHeaders, ['Mã trạm', 'ma tram', 'matram']);
