@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thay Công Tơ Định Kỳ</title>
+<meta name="theme-color" content="#007aff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f2f2f7;margin:0;padding:16px}
+h1{font-size:22px;margin:0 0 14px 0}
+.card{background:#fff;padding:14px;border-radius:16px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+input[type=text],input[type=file],textarea,select{
+    width:100%;padding:12px;box-sizing:border-box;border-radius:12px;border:1px solid #ddd;margin-top:8px;font-size:16px
+}
+button{border:none;border-radius:12px;padding:11px 14px;font-size:15px;margin-top:8px;cursor:pointer}
+.primary{background:#007aff;color:#fff}
+.success{background:#34c759;color:#fff}
+.danger{background:#ff3b30;color:#fff}
+.warn{background:#ff9500;color:#fff}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-btn{padding:8px 14px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;margin-top:0;background:#eee;color:#333}
+.filter-btn.active-all{background:#007aff;color:#fff}
+.filter-btn.active-pending{background:#ff3b30;color:#fff}
+.filter-btn.active-done{background:#34c759;color:#fff}
+.meter-card{background:#fff;padding:14px;border-radius:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.meter-card.done-card{border-left:5px solid #34c759}
+.meter-card.pending-card{border-left:5px solid #ff3b30}
+.stt{font-size:14px;color:#666;margin-bottom:6px}
+.meter-number{font-size:20px;font-weight:700;margin:2px 0;word-break:break-all}
+.phone-number{font-size:18px;font-weight:700;color:#007aff;margin:2px 0}
+.info-box{margin-top:8px;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:12px}
+.status{margin-top:12px;padding:10px 16px;border-radius:12px;display:inline-block;font-size:15px;cursor:pointer;font-weight:700;user-select:none}
+.done{background:#d1f7dd;color:#147a36}
+.not-done{background:#ffe4e1;color:#c0392b}
+.call-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#007aff;color:#fff;padding:12px 18px;border-radius:12px;font-size:16px;font-weight:700;text-decoration:none;margin-top:8px;flex:1;min-width:120px}
+.sms-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#34c759;color:#fff;padding:12px 18px;border-radius:12px;font-size:16px;font-weight:700;text-decoration:none;margin-top:8px;flex:1;min-width:120px}
+.phone-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.phone-input{width:100%;padding:10px 12px;box-sizing:border-box;border-radius:10px;border:1px solid #ddd;font-size:17px;font-weight:600;color:#007aff;margin-top:6px}
+label{font-size:13px;color:#555;margin-top:10px;display:block}
+#mapPanel{display:none}
+.address{font-size:15px;line-height:1.4;color:#333}
+</style>
+</head>
+<body>
+
+<h1>⚡ Thay Công Tơ Định Kỳ</h1>
+
+<div class="card">
+    <input type="file" id="excelFile" accept=".xlsx,.xls,.csv" onchange="onFileSelected(event)">
+
+    <div id="mapPanel">
+        <p style="margin:12px 0 4px;font-weight:600">Chọn cột tương ứng (đã tự chọn sẵn theo file của bạn):</p>
+
+        <label>NO công tơ xuống (hiện trên) ← "công tơ mới"</label>
+        <select id="selXuong"></select>
+
+        <label>NO công tơ lên (hiện dưới) ← "Công tơ"</label>
+        <select id="selLen"></select>
+
+        <label>Địa chỉ sử dụng điện ← "Địa chỉ"</label>
+        <select id="selDiaChi"></select>
+
+        <label>Số điện thoại khách hàng (để gọi)</label>
+        <select id="selPhone"></select>
+
+        <label>Mã trạm</label>
+        <select id="selMaTram"></select>
+
+        <label>Tên khách hàng</label>
+        <select id="selTenTram"></select>
+
+        <label>STT</label>
+        <select id="selSTT"></select>
+
+        <button class="primary" style="width:100%;margin-top:14px" onclick="doImport()">✅ Import dữ liệu</button>
+    </div>
+
+    <input type="text" id="searchInput" placeholder="🔍 Tìm STT, SĐT, NO, địa chỉ, mã/tên..." oninput="renderList()">
+
+    <div class="row" style="margin-top:12px">
+        <button class="filter-btn active-all" id="btnAll" onclick="setFilter('all')">Tất cả</button>
+        <button class="filter-btn" id="btnPending" onclick="setFilter('pending')">✗ Chưa thay</button>
+        <button class="filter-btn" id="btnDone" onclick="setFilter('done')">✓ Đã thay</button>
+    </div>
+
+    <div class="row">
+        <button class="danger" onclick="clearAll()">🗑 Xóa tất cả</button>
+    </div>
+
+    <div id="counter" style="margin-top:10px;font-size:14px">
+        Tổng: <b>0</b> | Đã thay: <b>0</b> | Chưa thay: <b>0</b>
+    </div>
+</div>
+
+<div id="meterList"></div>
+
+<script>
+let meterData = JSON.parse(localStorage.getItem('meterData') || '[]');
+let currentFilter = 'all';
+let excelRows = [];
+let excelHeaders = [];
+
+function saveData() {
+    localStorage.setItem('meterData', JSON.stringify(meterData));
+}
+
+function escapeHtml(str) {
+    return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function norm(str) {
+    return String(str||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]/g,'');
+}
+
+function normalizePhone(phone) {
+    return String(phone||'').replace(/[^0-9+]/g,'');
+}
+
+function findHeader(headers, candidates) {
+    for (const c of candidates) {
+        const found = headers.find(h => h === c || norm(h) === norm(c));
+        if (found) return found;
+    }
+    for (const c of candidates) {
+        const nc = norm(c);
+        const found = headers.find(h => norm(h).includes(nc) || nc.includes(norm(h)));
+        if (found) return found;
+    }
+    return '';
+}
+
+function fillSelect(selId, headers, guessed) {
+    const sel = document.getElementById(selId);
+    sel.innerHTML = '<option value="">-- Không dùng --</option>';
+    headers.forEach(h => {
+        if (String(h).startsWith('__EMPTY')) return;
+        const opt = document.createElement('option');
+        opt.value = h;
+        opt.textContent = h;
+        if (h === guessed) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+
+function onFileSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            excelRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+            if (excelRows.length === 0) {
+                alert('File Excel trống!');
+                return;
+            }
+
+            excelHeaders = Object.keys(excelRows[0]);
+            document.getElementById('mapPanel').style.display = 'block';
+
+            const gXuong  = findHeader(excelHeaders, ['công tơ mới', 'cong to moi', 'Công tơ mới']);
+            const gLen    = findHeader(excelHeaders, ['Công tơ', 'cong to', 'công tơ']);
+            const gDiaChi = findHeader(excelHeaders, ['Địa chỉ', 'dia chi', 'Địa chỉ sử dụng điện', 'dia chi su dung dien']);
+            const gPhone  = findHeader(excelHeaders, ['SĐT', 'Số điện thoại', 'sdt', 'dienthoai', 'phone', 'Điện thoại', 'dien thoai', 'Tel', 'Mobile', 'Số DT', 'so dt', 'SĐT KH', 'sdt kh']);
+            const gMaTram = findHeader(excelHeaders, ['Mã trạm', 'ma tram', 'matram']);
+            const gTenTram= findHeader(excelHeaders, ['Tên khách hàng', 'ten khach hang', 'Tên trạm', 'ten tram']);
+            const gSTT    = findHeader(excelHeaders, ['số thứ tự', 'so thu tu', 'STT', 'stt']);
+
+            fillSelect('selXuong',  excelHeaders, gXuong);
+            fillSelect('selLen',    excelHeaders, gLen);
+            fillSelect('selDiaChi', excelHeaders, gDiaChi);
+            fillSelect('selPhone',  excelHeaders, gPhone);
+            fillSelect('selMaTram', excelHeaders, gMaTram);
+            fillSelect('selTenTram',excelHeaders, gTenTram);
+            fillSelect('selSTT',    excelHeaders, gSTT);
+
+        } catch (err) {
+            alert('Lỗi đọc file: ' + err.message);
+        }
+        event.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function doImport() {
+    const colXuong  = document.getElementById('selXuong').value;
+    const colLen    = document.getElementById('selLen').value;
+    const colDiaChi = document.getElementById('selDiaChi').value;
+    const colPhone  = document.getElementById('selPhone').value;
+    const colMaTram = document.getElementById('selMaTram').value;
+    const colTenTram= document.getElementById('selTenTram').value;
+    const colSTT    = document.getElementById('selSTT').value;
+
+    if (!colXuong && !colLen) {
+        alert('Bạn phải chọn ít nhất 1 cột NO công tơ!');
+        return;
+    }
+
+    if (meterData.length > 0) {
+        if (!confirm('Đang có ' + meterData.length + ' dữ liệu cũ. Xóa hết rồi import mới?')) {
+            return;
+        }
+        meterData = [];
+    }
+
+    let added = 0;
+
+    excelRows.forEach((row, idx) => {
+        const xuongStr  = colXuong  ? String(row[colXuong]  || '').trim() : '';
+        const lenStr    = colLen    ? String(row[colLen]    || '').trim() : '';
+        const diaChiStr = colDiaChi ? String(row[colDiaChi] || '').trim() : '';
+        const phoneStr  = colPhone  ? normalizePhone(row[colPhone]) : '';
+        const maTramStr = colMaTram ? String(row[colMaTram] || '').trim() : '';
+        const tenTramStr= colTenTram? String(row[colTenTram]|| '').trim() : '';
+        const sttStr    = colSTT    ? String(row[colSTT]    || '').trim() : String(idx + 1);
+
+        if (!xuongStr && !lenStr) return;
+
+        meterData.push({
+            stt: sttStr,
+            soCongToXuong: xuongStr,
+            soCongToLen: lenStr,
+            diaChi: diaChiStr,
+            phone: phoneStr,
+            maTram: maTramStr,
+            tenTram: tenTramStr,
+            done: false,
+            time: null,
+            note: ''
+        });
+        added++;
+    });
+
+    saveData();
+    renderList();
+    document.getElementById('mapPanel').style.display = 'none';
+    alert('✅ Đã import thành công ' + added + ' công tơ');
+}
+
+function setFilter(f) {
+    currentFilter = f;
+    document.getElementById('btnAll').className = 'filter-btn' + (f==='all'?' active-all':'');
+    document.getElementById('btnPending').className = 'filter-btn' + (f==='pending'?' active-pending':'');
+    document.getElementById('btnDone').className = 'filter-btn' + (f==='done'?' active-done':'');
+    renderList();
+}
+
+function toggleDone(index) {
+    meterData[index].done = !meterData[index].done;
+    meterData[index].time = new Date().toLocaleString('vi-VN');
+    saveData();
+    renderList();
+}
+
+function updateNote(index, value) {
+    meterData[index].note = value;
+    saveData();
+}
+
+function updatePhone(index, value) {
+    meterData[index].phone = normalizePhone(value);
+    saveData();
+    renderList();
+}
+
+function deleteItem(index) {
+    if (confirm('Xóa công tơ này?')) {
+        meterData.splice(index, 1);
+        saveData();
+        renderList();
+    }
+}
+
+function clearAll() {
+    if (confirm('Xóa toàn bộ dữ liệu?')) {
+        meterData = [];
+        saveData();
+        renderList();
+    }
+}
+
+function renderList() {
+    const list = document.getElementById('meterList');
+    const search = document.getElementById('searchInput').value.trim().toLowerCase();
+    list.innerHTML = '';
+
+    const filtered = meterData.filter(item => {
+        const ok = !search ||
+            (item.stt||'').toLowerCase().includes(search) ||
+            (item.soCongToLen||'').toLowerCase().includes(search) ||
+            (item.soCongToXuong||'').toLowerCase().includes(search) ||
+            (item.diaChi||'').toLowerCase().includes(search) ||
+            (item.phone||'').toLowerCase().includes(search) ||
+            (item.maTram||'').toLowerCase().includes(search) ||
+            (item.tenTram||'').toLowerCase().includes(search);
+        if (!ok) return false;
+        if (currentFilter === 'pending') return !item.done;
+        if (currentFilter === 'done') return item.done;
+        return true;
+    });
+
+    filtered.forEach(item => {
+        const i = meterData.indexOf(item);
+        const div = document.createElement('div');
+        div.className = 'meter-card ' + (item.done ? 'done-card' : 'pending-card');
+
+        const tramHtml = (item.maTram || item.tenTram) ? `
+            <div class="info-box">
+                🏭 Trạm / KH<br>
+                <div style="font-size:15px;margin-top:4px">
+                    ${item.maTram ? '<b>Mã trạm:</b> '+escapeHtml(item.maTram) : ''}
+                    ${item.maTram && item.tenTram ? '<br>' : ''}
+                    ${item.tenTram ? '<b>Tên:</b> '+escapeHtml(item.tenTram) : ''}
+                </div>
+            </div>` : '';
+
+        const diaChiHtml = item.diaChi ? `
+            <div class="info-box">
+                📍 Địa chỉ sử dụng điện<br>
+                <div class="address">${escapeHtml(item.diaChi)}</div>
+            </div>` : '';
+
+        const phoneVal = item.phone || '';
+        const hasPhone = phoneVal.length >= 8;
+
+        const phoneHtml = `
+            <div class="info-box" style="border:2px solid ${hasPhone ? '#007aff' : '#eee'}">
+                📞 Số điện thoại khách hàng
+                <input type="tel" class="phone-input" value="${escapeHtml(phoneVal)}" 
+                       placeholder="Nhập số điện thoại..." 
+                       onchange="updatePhone(${i}, this.value)"
+                       onclick="this.select()">
+                ${hasPhone ? `
+                <div class="phone-actions">
+                    <a class="call-btn" href="tel:${escapeHtml(phoneVal)}">📲 Gọi ngay</a>
+                    <a class="sms-btn" href="sms:${escapeHtml(phoneVal)}">💬 Nhắn tin</a>
+                </div>` : `<div style="margin-top:8px;font-size:13px;color:#888">Nhập số rồi nhấn ra ngoài để lưu</div>`}
+            </div>`;
+
+        div.innerHTML = `
+            <div class="stt">STT: <b>${escapeHtml(item.stt)}</b></div>
+            ${tramHtml}
+            ${diaChiHtml}
+            <div class="info-box">
+                <span style="color:#ff3b30">🔽</span> NO công tơ xuống<br>
+                <div class="meter-number" style="color:#ff3b30">${escapeHtml(item.soCongToXuong) || '—'}</div>
+            </div>
+            <div class="info-box">
+                <span style="color:#34c759">🔼</span> NO công tơ lên<br>
+                <div class="meter-number" style="color:#34c759">${escapeHtml(item.soCongToLen) || '—'}</div>
+            </div>
+            ${phoneHtml}
+            <div>
+                <span class="status ${item.done?'done':'not-done'}" onclick="toggleDone(${i})">
+                    ${item.done ? '✓ ĐÃ THAY' : '✗ CHƯA THAY'}
+                </span>
+            </div>
+            ${item.time ? `<div style="margin-top:6px;font-size:12px;color:#888">⏱ ${escapeHtml(item.time)}</div>` : ''}
+            <textarea placeholder="📝 Ghi chú..." onchange="updateNote(${i},this.value)">${escapeHtml(item.note)}</textarea>
+            <div class="row">
+                <button class="danger" onclick="deleteItem(${i})">🗑 Xóa</button>
+            </div>
+        `;
+        list.appendChild(div);
+    });
+
+    const doneCount = meterData.filter(m => m.done).length;
+    document.getElementById('counter').innerHTML = `
+        Tổng: <b>${meterData.length}</b>
+        &nbsp;|&nbsp; <span style="color:#34c759">Đã thay: <b>${doneCount}</b></span>
+        &nbsp;|&nbsp; <span style="color:#ff3b30">Chưa thay: <b>${meterData.length - doneCount}</b></span>
+    `;
+}
+
+renderList();
+</script>
+</body>
+</html>
