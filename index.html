@@ -102,14 +102,19 @@ label{font-size:13px;color:#555;margin-top:10px;display:block}
 #lbBar button{margin-top:0}
 #lbInfo{color:#ddd;font-size:13px;text-align:center;padding:10px 12px 0}
 
-/* ---- Hộp thoại chọn kiểu import ---- */
-#importModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998;align-items:center;justify-content:center;padding:16px}
-#importModal.show{display:flex}
+/* ---- Tên người dùng ---- */
+.who-chip{width:100%;text-align:left;background:#f0f7ff;color:#007aff;font-weight:700}
+.who-chip.empty{background:#fff4e5;color:#c76a00}
+
+/* ---- Hộp thoại ---- */
+#importModal,#nameModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998;align-items:center;justify-content:center;padding:16px}
+#importModal.show,#nameModal.show{display:flex}
 .modal-box{background:#fff;border-radius:16px;padding:18px;max-width:430px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3)}
 .modal-box h3{margin:0 0 6px;font-size:17px}
 .modal-box p{margin:0 0 6px;font-size:14px;color:#555;line-height:1.5}
 .modal-box button{width:100%;text-align:left;padding:13px 14px;font-weight:700}
 .modal-box .sub{display:block;font-size:12px;font-weight:400;opacity:.9;margin-top:3px}
+.field-err{display:none;color:#c0392b;font-size:13px;font-weight:600;margin-top:6px}
 
 /* ---- Thông báo nhỏ ---- */
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#333;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;z-index:1000;opacity:0;pointer-events:none;transition:.25s;max-width:90vw;text-align:center}
@@ -126,6 +131,7 @@ label{font-size:13px;color:#555;margin-top:10px;display:block}
         <b style="font-size:16px">☁️ Đồng bộ &amp; chia sẻ</b>
         <span class="sync-badge" id="syncBadge">Đang khởi động…</span>
     </div>
+    <button class="who-chip" id="whoAmI" onclick="askName()">👤 …</button>
     <button class="ghost" style="width:100%" onclick="toggleSyncPanel()">⚙️ Cài đặt nhóm</button>
 
     <div id="syncBody">
@@ -211,6 +217,17 @@ label{font-size:13px;color:#555;margin-top:10px;display:block}
         <button class="ghost" onclick="downloadPhoto()">⬇️ Tải về</button>
         <button class="danger" onclick="deleteCurrentPhoto()">🗑 Xóa ảnh</button>
         <button class="ghost" onclick="closeLightbox()">✖ Đóng</button>
+    </div>
+</div>
+
+<!-- Hỏi tên khi vào nhóm mà chưa có tên -->
+<div id="nameModal">
+    <div class="modal-box">
+        <h3>Bạn tên gì?</h3>
+        <p>Tên này hiện lên cạnh công tơ bạn đã thay và ảnh bạn chụp, để cả tổ biết ai làm phần nào.</p>
+        <input type="text" id="nameInput" placeholder="VD: Tùng" autocomplete="name" enterkeyhint="done">
+        <div class="field-err" id="nameErr">Nhập tên rồi mới dùng app được nhé.</div>
+        <button class="success" onclick="saveName()">✅ Xong</button>
     </div>
 </div>
 

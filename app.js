@@ -145,6 +145,53 @@ function setSyncBadge(state, text) {
     el.textContent = text;
 }
 
+/* ---------------------- Tên người dùng ---------------------- */
+function askName() {
+    document.getElementById('nameInput').value = userName;
+    document.getElementById('nameModal').classList.add('show');
+    setTimeout(() => document.getElementById('nameInput').focus(), 60);
+}
+
+function saveName() {
+    const value = document.getElementById('nameInput').value.trim();
+    if (!value) {
+        // Bắt buộc có tên, không thì không ai biết ai làm phần nào
+        document.getElementById('nameErr').style.display = 'block';
+        document.getElementById('nameInput').focus();
+        return;
+    }
+    setUserName(value);
+    closeNameModal();
+    toast('Chào ' + userName + '!');
+}
+
+function closeNameModal() {
+    document.getElementById('nameModal').classList.remove('show');
+    document.getElementById('nameErr').style.display = 'none';
+}
+
+function setUserName(name) {
+    userName = String(name || '').trim();
+    localStorage.setItem('userName', userName);
+    const box = document.getElementById('userInput');
+    if (box) box.value = userName;
+    updateWhoAmI();
+}
+
+function updateWhoAmI() {
+    const el = document.getElementById('whoAmI');
+    if (!el) return;
+    el.textContent = userName ? '👤 ' + userName + ' — bấm để đổi tên'
+                              : '👤 Chưa có tên — bấm để nhập';
+    el.className = 'who-chip' + (userName ? '' : ' empty');
+}
+
+/* Chưa có tên thì hỏi ngay và không cho bỏ qua — thiếu tên thì mọi việc làm
+   đều không biết của ai. Hộp thoại phủ kín màn hình nên phải nhập mới dùng tiếp được. */
+function requireName() {
+    if (!userName) setTimeout(askName, 300);
+}
+
 function toggleSyncPanel() {
     const b = document.getElementById('syncBody');
     b.style.display = b.style.display === 'block' ? 'none' : 'block';
@@ -152,8 +199,9 @@ function toggleSyncPanel() {
 
 function connectTeam() {
     const code = document.getElementById('teamInput').value.trim().toUpperCase();
-    userName = document.getElementById('userInput').value.trim();
-    localStorage.setItem('userName', userName);
+    // Chỉ ghi đè khi có nhập, tránh xoá trắng tên đang có
+    const typedName = document.getElementById('userInput').value.trim();
+    if (typedName) setUserName(typedName);
 
     if (!code) { alert('Nhập mã nhóm trước đã!'); return; }
     if (!/^[A-Z0-9_-]{8,40}$/.test(code)) {
@@ -172,6 +220,7 @@ function connectTeam() {
     teamCode = code;
     localStorage.setItem('teamCode', teamCode);
     startListening();
+    requireName();
 
     if (localBackup.length) {
         setTimeout(() => {
@@ -245,6 +294,7 @@ function shareTeamLink() {
 function updateSyncUI() {
     document.getElementById('teamInput').value = teamCode;
     document.getElementById('userInput').value = userName;
+    updateWhoAmI();
     const hint = document.getElementById('syncHint');
 
     if (!firebaseConfigured()) {
@@ -985,9 +1035,16 @@ function renderList() {
         handlePhotoFiles(Array.from(e.target.files)); e.target.value = '';
     };
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+    document.getElementById('nameInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); saveName(); }
+    });
     document.getElementById('userInput').onchange = function () {
-        userName = this.value.trim();
-        localStorage.setItem('userName', userName);
+        if (!this.value.trim()) {       // khong cho xoa trang ten da co
+            this.value = userName;
+            toast('Phải có tên để anh em biết ai làm phần nào');
+            return;
+        }
+        setUserName(this.value);
     };
 
     // Có sóng trở lại thì đẩy nốt ảnh đã chụp lúc mất mạng
@@ -1002,5 +1059,6 @@ function renderList() {
         startListening();
     }
 
+    requireName();      // lan dau mo app la hoi ten luon
     uploadPending();
 })();
