@@ -15,8 +15,18 @@ let excelHeaders = [];
 let teamCode = localStorage.getItem('teamCode') || '';
 let userName = localStorage.getItem('userName') || '';
 
+/* Moi may mot ma rieng: chi may da chup moi chiu trach nhiem day anh do len */
+let deviceId = localStorage.getItem('deviceId');
+if (!deviceId) {
+    deviceId = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem('deviceId', deviceId);
+}
+
 let db = null;            // Firestore instance
 let unsubscribe = null;   // huỷ listener real-time
+let unsubPhotos = null;   // listener rieng cho anh
+let cloudPhotos = [];     // anh cua nhom, moi anh mot ban ghi
+let legacyPhotos = new Map();  // anh nhung san trong ban ghi cong to (ban app cu)
 let cloudReady = false;   // đang đồng bộ với nhóm hay không
 
 /* Cỡ ảnh chụp: 1280px / 0.75 đọc rõ số công tơ mà vẫn nhẹ.
@@ -197,18 +207,35 @@ function toggleSyncPanel() {
     b.style.display = b.style.display === 'block' ? 'none' : 'block';
 }
 
+/* Tên nhóm để tự do: chữ Việt có dấu, khoảng trắng, chữ hoa chữ thường đều được.
+   Chỉ chặn đúng mấy thứ Firestore không cho đặt làm tên bản ghi, cộng độ dài
+   tối thiểu cho khớp với Rules đang publish (teamId.size() >= 8). */
+function cleanTeamCode(raw) {
+    return String(raw || '').trim().replace(/\s+/g, ' ');
+}
+
+function teamCodeError(code) {
+    if (!code) return 'Nhập tên nhóm trước đã!';
+    if (code.indexOf('/') >= 0) return 'Tên nhóm không được chứa dấu gạch chéo /';
+    if (code === '.' || code === '..') return 'Tên nhóm không hợp lệ.';
+    if (/^__.*__$/.test(code)) return 'Tên nhóm không được vừa mở đầu vừa kết thúc bằng __';
+    if (code.length > 100) return 'Tên nhóm dài quá, tối đa 100 ký tự.';
+    if (code.length < 8) {
+        return 'Tên nhóm phải dài ít nhất 8 ký tự.' +
+               ' Tên này chính là mật khẩu vào nhóm — ai biết là xem và sửa được,' +
+               ' nên đặt dài và khó đoán một chút. VD: Tổ 1 Hoàn Kiếm 2026';
+    }
+    return '';
+}
+
 function connectTeam() {
-    const code = document.getElementById('teamInput').value.trim().toUpperCase();
+    const code = cleanTeamCode(document.getElementById('teamInput').value);
     // Chỉ ghi đè khi có nhập, tránh xoá trắng tên đang có
     const typedName = document.getElementById('userInput').value.trim();
     if (typedName) setUserName(typedName);
 
-    if (!code) { alert('Nhập mã nhóm trước đã!'); return; }
-    if (!/^[A-Z0-9_-]{8,40}$/.test(code)) {
-        alert('Mã nhóm phải dài ít nhất 8 ký tự, chỉ gồm chữ, số, dấu - hoặc _.' +
-              ' Mã này chính là mật khẩu của nhóm nên đặt khó đoán, VD: TO1-2026-K7X9');
-        return;
-    }
+    const err = teamCodeError(code);
+    if (err) { alert(err); return; }
     if (!firebaseConfigured()) {
         alert('Chưa dán cấu hình Firebase vào index.html.\nXem file HUONG_DAN_FIREBASE.md để làm theo từng bước.');
         return;
@@ -234,7 +261,9 @@ function connectTeam() {
 }
 
 function leaveTeam() {
-    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    stopListening();
+    cloudPhotos = [];
+    legacyPhotos = new Map();
     cloudReady = false;
     teamCode = '';
     localStorage.removeItem('teamCode');
@@ -243,13 +272,18 @@ function leaveTeam() {
 }
 
 function startListening() {
-    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    stopListening();
     setSyncBadge('off', '⏳ Đang kết nối…');
 
     unsubscribe = metersCol().orderBy('order').onSnapshot(snap => {
         meterData = snap.docs.map(d => normalizeItem(d.data()));
-        saveLocal();
-        renderList();
+        // Ảnh nhúng sẵn trong bản ghi công tơ là của bản app cũ. Phải nhớ riêng
+        // ở đây, nếu lấy từ item.photos thì ảnh vừa xoá sẽ bị giữ lại mãi.
+        legacyPhotos = new Map();
+        meterData.forEach(it => {
+            if (it.photos && it.photos.length) legacyPhotos.set(it.id, it.photos);
+        });
+        attachPhotos();
         cloudReady = true;
         const src = snap.metadata.fromCache ? ' (ngoại tuyến)' : '';
         setSyncBadge('on', '🟢 ' + teamCode + src);
@@ -261,6 +295,40 @@ function startListening() {
         document.getElementById('syncHint').textContent =
             'Không đồng bộ được: ' + err.message + '. Dữ liệu vẫn lưu trên máy.';
     });
+
+    // Ảnh nghe riêng: mỗi ảnh là một bản ghi nên thêm/xoá ảnh không bao giờ
+    // đụng vào bản ghi công tơ, hai người chụp cùng lúc không mất ảnh của nhau
+    unsubPhotos = photosCol().onSnapshot(snap => {
+        cloudPhotos = snap.docs.map(d => d.data());
+        attachPhotos();
+    }, () => {});
+}
+
+function stopListening() {
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    if (unsubPhotos) { unsubPhotos(); unsubPhotos = null; }
+}
+
+/* Gắn ảnh từ collection riêng vào từng công tơ để hiển thị.
+   Ảnh cũ còn nhúng trong bản ghi công tơ (bản app trước) vẫn hiện bình thường. */
+function attachPhotos() {
+    const byMeter = new Map();
+    cloudPhotos.forEach(p => {
+        if (!p || !p.meterId) return;
+        if (!byMeter.has(p.meterId)) byMeter.set(p.meterId, []);
+        byMeter.get(p.meterId).push(p);
+    });
+
+    meterData.forEach(item => {
+        const legacy = legacyPhotos.get(item.id) || [];
+        const fresh = (byMeter.get(item.id) || []).slice()
+            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        const seen = new Set(fresh.map(p => p.id));
+        item.photos = legacy.filter(p => !seen.has(p.id)).concat(fresh);
+    });
+
+    saveLocal();
+    renderList();
 }
 
 async function uploadLocalToCloud(local) {
@@ -273,7 +341,23 @@ async function uploadLocalToCloud(local) {
 async function writeBatched(items) {
     for (let i = 0; i < items.length; i += 400) {
         const batch = db.batch();
-        items.slice(i, i + 400).forEach(it => batch.set(metersCol().doc(it.id), it));
+        items.slice(i, i + 400).forEach(it =>
+            batch.set(metersCol().doc(it.id), meterDoc(it), { merge: true }));
+        await batch.commit();
+    }
+}
+
+/* Import gop chi duoc phep sua may truong mo ta, khong dung toi phan da lam */
+const IMPORT_FIELDS = ['stt', 'soCongToXuong', 'soCongToLen', 'diaChi', 'maTram', 'tenTram', 'phone'];
+
+async function writeImportPatches(items) {
+    for (let i = 0; i < items.length; i += 400) {
+        const batch = db.batch();
+        items.slice(i, i + 400).forEach(it => {
+            const patch = { updatedAt: it.updatedAt || Date.now(), updatedBy: it.updatedBy || '' };
+            IMPORT_FIELDS.forEach(f => { patch[f] = it[f]; });
+            batch.set(metersCol().doc(it.id), patch, { merge: true });
+        });
         await batch.commit();
     }
 }
@@ -307,13 +391,33 @@ function updateSyncUI() {
 }
 
 /* ------------------- Ghi dữ liệu (cloud hoặc máy) ------------------- */
-function persist(item) {
+/* Bản ghi công tơ đẩy lên nhóm — ảnh nằm ở collection riêng nên bỏ ra */
+function meterDoc(item) {
+    const d = Object.assign({}, item);
+    delete d.photos;
+    return d;
+}
+
+/* Lưu thay đổi.
+   `fields` là danh sách trường thực sự vừa đổi. Chỉ ghi đúng mấy trường đó lên
+   Firestore (set + merge) nên hai người sửa hai thứ khác nhau trên cùng một
+   công tơ sẽ không đạp lên nhau. Không truyền `fields` thì ghi cả bản ghi —
+   chỉ dùng lúc import. */
+function persist(item, fields) {
     item.updatedAt = Date.now();
     if (userName) item.updatedBy = userName;
     saveLocal();
-    if (cloudReady) {
-        metersCol().doc(item.id).set(item).catch(e => toast('⚠️ Lỗi lưu lên nhóm: ' + e.message));
+    if (!cloudReady) return;
+
+    let payload;
+    if (fields && fields.length) {
+        payload = { updatedAt: item.updatedAt, updatedBy: item.updatedBy || '' };
+        fields.forEach(f => { payload[f] = item[f]; });
+    } else {
+        payload = meterDoc(item);
     }
+    metersCol().doc(item.id).set(payload, { merge: true })
+        .catch(e => toast('⚠️ Lỗi lưu lên nhóm: ' + e.message));
 }
 
 function normalizeItem(item) {
@@ -444,8 +548,7 @@ function applyRows(rows) {
     });
 
     let nextOrder = meterData.reduce((mx, m) => Math.max(mx, m.order || 0), -1) + 1;
-    let added = 0, updated = 0;
-    const touched = [];
+    const newItems = [], updatedItems = [];
 
     rows.forEach(row => {
         const k = mergeKey(row.soCongToXuong, row.soCongToLen);
@@ -462,20 +565,26 @@ function applyRows(rows) {
             // hiện trường — chỉ điền khi đang trống
             if (!exist.phone && row.phone) exist.phone = row.phone;
             exist.updatedAt = Date.now();
-            touched.push(exist);
-            updated++;
+            if (userName) exist.updatedBy = userName;
+            updatedItems.push(exist);
         } else {
             const item = normalizeItem(Object.assign({ id: uid(), order: nextOrder++ }, row));
+            if (userName) item.updatedBy = userName;
+            item.updatedAt = Date.now();
             meterData.push(item);
             if (k) index.set(k, item);
-            touched.push(item);
-            added++;
+            newItems.push(item);
         }
     });
 
     saveLocal();
     renderList();
-    return { added, updated, touched };
+    return {
+        added: newItems.length,
+        updated: updatedItems.length,
+        newItems, updatedItems,
+        touched: newItems.concat(updatedItems)
+    };
 }
 
 async function doImport() {
@@ -528,7 +637,10 @@ async function doImport() {
     if (cloudReady && r.touched.length) {
         toast('Đang tải lên nhóm…');
         try {
-            await writeBatched(r.touched);
+            await writeBatched(r.newItems);
+            // Dong da co thi chi sua may truong mo ta, khong dung toi
+            // trang thai da thay / ghi chu ma nguoi khac vua cap nhat
+            await writeImportPatches(r.updatedItems);
         } catch (e) {
             alert('Lỗi tải lên nhóm: ' + e.message);
             return;
@@ -556,7 +668,7 @@ function toggleDone(id) {
     if (!item) return;
     item.done = !item.done;
     item.time = nowStr();
-    persist(item);
+    persist(item, ['done', 'time']);
     renderList();
 }
 
@@ -564,14 +676,14 @@ function updateNote(id, value) {
     const item = byId(id);
     if (!item) return;
     item.note = value;
-    persist(item);
+    persist(item, ['note']);
 }
 
 function updatePhone(id, value) {
     const item = byId(id);
     if (!item) return;
     item.phone = normalizePhone(value);
-    persist(item);
+    persist(item, ['phone']);
     renderList();
 }
 
@@ -582,6 +694,7 @@ async function deleteItem(id) {
 
     for (const p of item.photos) await removePhotoData(p);
     meterData = meterData.filter(m => m.id !== id);
+    cloudPhotos = cloudPhotos.filter(p => p.meterId !== id);
     saveLocal();
     renderList();
     if (cloudReady) metersCol().doc(id).delete().catch(e => toast('⚠️ ' + e.message));
@@ -682,11 +795,19 @@ async function handlePhotoFiles(files) {
 
             const item = byId(meterId);
             if (!item) return;
-            item.photos.push({
-                id: photoId, thumb: thumb, time: nowStr(),
-                by: userName || '', pending: true
-            });
-            persist(item);
+            const meta = {
+                id: photoId, meterId: item.id, thumb: thumb, time: nowStr(),
+                by: userName || '', device: deviceId, pending: true, createdAt: Date.now()
+            };
+
+            if (cloudReady) {
+                // Mỗi ảnh là một bản ghi riêng, thêm ảnh không đụng gì tới bản
+                // ghi công tơ nên không sợ đè lên thay đổi của người khác
+                await photosCol().doc(photoId).set(meta);
+            } else {
+                item.photos.push(meta);
+                saveLocal();
+            }
             renderList();
             toast('✅ Đã lưu ảnh (' + Math.round(full.length / 1024) + ' KB)');
         } catch (e) {
@@ -727,22 +848,44 @@ async function uploadToCloudinary(photoId, dataUrl, item) {
 
 let uploading = false;
 
+/* Lưu thay đổi của riêng một tấm ảnh — chỉ ghi đúng mấy trường vừa đổi,
+   không đụng tới bản ghi công tơ lẫn các ảnh khác. */
+function savePhotoMeta(item, meta, fields) {
+    if (cloudReady) {
+        const patch = {};
+        fields.forEach(f => { if (meta[f] !== undefined) patch[f] = meta[f]; });
+        photosCol().doc(meta.id).set(patch, { merge: true }).catch(() => {});
+    }
+    saveLocal();
+}
+
 /* Đẩy nốt những ảnh còn đang chờ (chụp lúc mất sóng) */
 async function uploadPending() {
     if (uploading || !cloudinaryConfigured() || !navigator.onLine) return;
     uploading = true;
     try {
         for (const item of meterData.slice()) {
-            for (const meta of item.photos.filter(p => p.pending)) {
+            // Chỉ máy đã chụp mới có file gốc để đẩy lên. Máy khác trong nhóm
+            // cũng thấy ảnh đang chờ nhưng phải để yên, không thì sẽ đánh dấu
+            // nhầm là hỏng và ảnh không bao giờ được tải lên.
+            const mine = item.photos.filter(p => p.pending && p.device === deviceId);
+
+            for (const meta of mine) {
                 const data = await PhotoStore.get(meta.id);
-                if (!data) { meta.pending = false; meta.missing = true; persist(item); continue; }
+                if (!data) {
+                    meta.pending = false;
+                    meta.missing = true;
+                    savePhotoMeta(item, meta, ['pending', 'missing']);
+                    continue;
+                }
                 try {
                     const r = await uploadToCloudinary(meta.id, data, item);
                     meta.url = r.secure_url;
                     meta.publicId = r.public_id;
                     if (r.delete_token) { meta.deleteToken = r.delete_token; meta.deleteTokenAt = Date.now(); }
                     meta.pending = false;
-                    persist(byId(item.id) || item);
+                    savePhotoMeta(item, meta,
+                        ['url', 'publicId', 'deleteToken', 'deleteTokenAt', 'pending']);
                     // Ảnh đã nằm trên Cloudinary, xoá bản tạm để đỡ tốn bộ nhớ máy
                     await PhotoStore.del(meta.id).catch(() => {});
                 } catch (e) {
@@ -895,7 +1038,7 @@ async function deleteCurrentPhoto() {
 
     await removePhotoData(meta);
     item.photos = item.photos.filter(p => p.id !== photoId);
-    persist(item);
+    saveLocal();
     renderList();
     toast('Đã xóa ảnh');
 }
@@ -1026,7 +1169,7 @@ function renderList() {
 
     // Mã nhóm có thể đến từ link mời: ...?team=TO1-2026
     const fromUrl = new URLSearchParams(location.search).get('team');
-    if (fromUrl) teamCode = fromUrl.trim().toUpperCase();
+    if (fromUrl) teamCode = cleanTeamCode(fromUrl);
 
     document.getElementById('cameraInput').onchange = function (e) {
         handlePhotoFiles(Array.from(e.target.files)); e.target.value = '';

@@ -54,23 +54,30 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /teams/{teamId}/{document=**} {
-      // Chỉ ai biết mã nhóm mới đọc/ghi được.
-      // Mã phải dài tối thiểu 8 ký tự để người ngoài không đoán ra.
+      // Chỉ ai biết tên nhóm mới đọc/ghi được.
+      // Tên phải dài tối thiểu 8 ký tự để người ngoài không đoán ra.
       allow read, write: if teamId.size() >= 8;
     }
   }
 }
 ```
 
-> **Quan trọng:** app không có đăng nhập, nên **mã nhóm chính là mật khẩu**.
-> Hãy đặt mã khó đoán, ví dụ `TO1-2026-K7X9` chứ đừng đặt `TO1` hay `TEST`.
-> Ai có mã là xem và sửa được dữ liệu của nhóm.
+> **Quan trọng:** app không có đăng nhập, nên **tên nhóm chính là mật khẩu**.
+> Tên nhóm để tự do — chữ Việt có dấu, khoảng trắng đều được — nhưng phải dài
+> ít nhất 8 ký tự và nên khó đoán: `Tổ 1 Hoàn Kiếm 2026` thì được, `Tổ 1` hay
+> `TEST` thì không.
+>
+> Ai biết tên nhóm là xem và sửa được toàn bộ dữ liệu của nhóm.
+>
+> Tên **phân biệt hoa thường**, nên đừng bắt anh em gõ tay — dùng nút
+> **📤 Chia sẻ link mời** cho chắc.
 
 ## Bước 5 — Dùng thử
 
 1. Mở app trên điện thoại → thẻ **☁️ Đồng bộ & chia sẻ** → **⚙️ Cài đặt nhóm**.
-2. Nhập **mã nhóm** (vd `TO1-2026-K7X9`) và **tên bạn** → bấm **🔗 Kết nối nhóm**.
-3. Huy hiệu góc phải chuyển thành **🟢 TO1-2026-K7X9** là xong.
+2. Nhập **tên nhóm** (vd `Tổ 1 Hoàn Kiếm 2026`) → bấm **🔗 Kết nối nhóm**.
+   (Tên của bạn thì app hỏi ngay lần đầu mở, không cần vào đây nhập.)
+3. Huy hiệu góc phải chuyển thành **🟢 Tổ 1 Hoàn Kiếm 2026** là xong.
 4. Import file Excel như bình thường — dữ liệu tự lên nhóm.
 5. Bấm **📤 Chia sẻ link mời vào nhóm** rồi gửi Zalo cho anh em. Người nhận
    mở link là vào thẳng nhóm, không phải gõ mã.
@@ -91,7 +98,7 @@ service cloud.firestore {
 ## Mất sóng thì sao?
 
 Vẫn dùng bình thường. App lưu tạm trên máy, có sóng lại tự đẩy lên nhóm.
-Huy hiệu lúc đó hiện **🟢 TO1-... (ngoại tuyến)**.
+Huy hiệu lúc đó hiện **🟢 Tổ 1 Hoàn Kiếm 2026 (ngoại tuyến)**.
 
 ## Hạn mức miễn phí (gói Spark)
 
@@ -119,7 +126,7 @@ bộ danh sách.
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| 🔴 Lỗi đồng bộ — *Missing or insufficient permissions* | Chưa Publish Rules ở Bước 4, hoặc mã nhóm ngắn hơn 8 ký tự |
+| 🔴 Lỗi đồng bộ — *Missing or insufficient permissions* | Chưa Publish Rules ở Bước 4, hoặc tên nhóm ngắn hơn 8 ký tự |
 | Vẫn hiện 💾 Lưu trên máy | Chưa dán `FIREBASE_CONFIG`, hoặc dán thiếu `apiKey`/`projectId` |
 | Bấm Chụp không mở camera | Trang phải chạy qua **https** (GitHub Pages có sẵn https), và phải cho phép quyền camera |
-| Người khác không thấy dữ liệu | Kiểm tra hai máy dùng **đúng cùng một mã nhóm** (mã không phân biệt hoa thường, tự chuyển thành IN HOA) |
+| Người khác không thấy dữ liệu | Hai máy phải dùng **đúng cùng một tên nhóm**, giống cả hoa thường. Gửi link mời là chắc nhất |
