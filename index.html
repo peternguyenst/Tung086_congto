@@ -7,6 +7,38 @@
 <meta name="theme-color" content="#007aff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+<!-- Firebase (bản compat - dùng biến toàn cục `firebase`) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+/* =========================================================================
+   DÁN CẤU HÌNH FIREBASE CỦA BẠN VÀO ĐÂY
+   Lấy tại: Firebase Console > Project settings > Your apps > Web app > Config
+   Xem hướng dẫn từng bước trong file HUONG_DAN_FIREBASE.md
+   Nếu để trống, app vẫn chạy bình thường nhưng chỉ lưu trên máy (không chia sẻ).
+   ========================================================================= */
+window.FIREBASE_CONFIG = {
+    apiKey: "AIzaSyB0aUEC_YBXhAJNDEGhQEDmL9UjFNJ1lmo",
+    authDomain: "congto-5cb21.firebaseapp.com",
+    projectId: "congto-5cb21",
+    storageBucket: "congto-5cb21.firebasestorage.app",
+    messagingSenderId: "830451492056",
+    appId: "1:830451492056:web:3c7d86eb7bdda8357c23ad"
+};
+
+/* =========================================================================
+   CLOUDINARY — nơi lưu ảnh chụp (xem hướng dẫn trong HUONG_DAN_CLOUDINARY.md)
+   Lấy tại: Cloudinary Console > Settings > Upload > Upload presets
+   Preset phải để chế độ "Unsigned".
+   Nếu để trống, ảnh vẫn chụp và lưu được nhưng chỉ nằm trên máy này.
+   ========================================================================= */
+window.CLOUDINARY_CONFIG = {
+    cloudName: "dywwgf8ru",
+    uploadPreset: "ml_default"
+};
+</script>
+
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f2f2f7;margin:0;padding:16px}
 h1{font-size:22px;margin:0 0 14px 0}
@@ -19,6 +51,7 @@ button{border:none;border-radius:12px;padding:11px 14px;font-size:15px;margin-to
 .success{background:#34c759;color:#fff}
 .danger{background:#ff3b30;color:#fff}
 .warn{background:#ff9500;color:#fff}
+.ghost{background:#eee;color:#333}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .filter-btn{padding:8px 14px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;margin-top:0;background:#eee;color:#333}
 .filter-btn.active-all{background:#007aff;color:#fff}
@@ -41,12 +74,80 @@ button{border:none;border-radius:12px;padding:11px 14px;font-size:15px;margin-to
 label{font-size:13px;color:#555;margin-top:10px;display:block}
 #mapPanel{display:none}
 .address{font-size:15px;line-height:1.4;color:#333}
+
+/* ---- Đồng bộ / mã nhóm ---- */
+.sync-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.sync-badge{font-size:13px;font-weight:700;padding:6px 12px;border-radius:20px;background:#eee;color:#555;white-space:nowrap}
+.sync-badge.on{background:#d1f7dd;color:#147a36}
+.sync-badge.off{background:#ffe9c9;color:#8a5300}
+.sync-badge.err{background:#ffe4e1;color:#c0392b}
+#syncBody{display:none;margin-top:6px}
+.hint{font-size:13px;color:#777;line-height:1.5;margin:8px 0 0}
+
+/* ---- Ảnh ---- */
+.photo-strip{display:flex;gap:8px;overflow-x:auto;margin-top:8px;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.photo-item{position:relative;flex:0 0 auto;cursor:pointer;line-height:0}
+.photo-thumb{width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid #ddd;background:#eee}
+.photo-badge{position:absolute;right:3px;bottom:3px;background:#ff9500;color:#fff;font-size:11px;line-height:1;padding:3px 5px;border-radius:8px}
+.photo-add{width:76px;height:76px;flex:0 0 auto;border:2px dashed #007aff;background:#f0f7ff;color:#007aff;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:22px;cursor:pointer;margin-top:0;padding:0;line-height:1.1}
+.photo-add small{font-size:10px;font-weight:700}
+.photo-count{font-size:13px;color:#666}
+
+/* ---- Xem ảnh phóng to ---- */
+#lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:999;flex-direction:column}
+#lightbox.show{display:flex}
+#lbImgWrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:8px}
+#lbImg{max-width:100%;max-height:100%;border-radius:8px}
+#lbBar{padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;flex-wrap:wrap;justify-content:center;background:rgba(0,0,0,.6)}
+#lbBar button{margin-top:0}
+#lbInfo{color:#ddd;font-size:13px;text-align:center;padding:10px 12px 0}
+
+/* ---- Hộp thoại chọn kiểu import ---- */
+#importModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998;align-items:center;justify-content:center;padding:16px}
+#importModal.show{display:flex}
+.modal-box{background:#fff;border-radius:16px;padding:18px;max-width:430px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal-box h3{margin:0 0 6px;font-size:17px}
+.modal-box p{margin:0 0 6px;font-size:14px;color:#555;line-height:1.5}
+.modal-box button{width:100%;text-align:left;padding:13px 14px;font-weight:700}
+.modal-box .sub{display:block;font-size:12px;font-weight:400;opacity:.9;margin-top:3px}
+
+/* ---- Thông báo nhỏ ---- */
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#333;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;z-index:1000;opacity:0;pointer-events:none;transition:.25s;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
 
 <h1>⚡ Thay Công Tơ Định Kỳ</h1>
 
+<!-- ============ ĐỒNG BỘ & CHIA SẺ ============ -->
+<div class="card">
+    <div class="sync-head">
+        <b style="font-size:16px">☁️ Đồng bộ &amp; chia sẻ</b>
+        <span class="sync-badge" id="syncBadge">Đang khởi động…</span>
+    </div>
+    <button class="ghost" style="width:100%" onclick="toggleSyncPanel()">⚙️ Cài đặt nhóm</button>
+
+    <div id="syncBody">
+        <label>Mã nhóm — mọi người nhập cùng mã sẽ thấy chung dữ liệu.<br>
+               ⚠️ Mã này chính là mật khẩu, hãy đặt khó đoán (tối thiểu 8 ký tự).</label>
+        <input type="text" id="teamInput" placeholder="VD: TO1-2026-K7X9" autocapitalize="characters">
+
+        <label>Tên bạn (hiện khi ai đó thay công tơ / chụp ảnh)</label>
+        <input type="text" id="userInput" placeholder="VD: Tùng">
+
+        <div class="row">
+            <button class="success" style="flex:1" onclick="connectTeam()">🔗 Kết nối nhóm</button>
+            <button class="ghost" onclick="leaveTeam()">Ngắt</button>
+        </div>
+        <div class="row">
+            <button class="primary" style="width:100%" onclick="shareTeamLink()">📤 Chia sẻ link mời vào nhóm</button>
+        </div>
+        <p class="hint" id="syncHint"></p>
+    </div>
+</div>
+
+<!-- ============ IMPORT & BỘ LỌC ============ -->
 <div class="card">
     <input type="file" id="excelFile" accept=".xlsx,.xls,.csv" onchange="onFileSelected(event)">
 
@@ -83,6 +184,7 @@ label{font-size:13px;color:#555;margin-top:10px;display:block}
         <button class="filter-btn active-all" id="btnAll" onclick="setFilter('all')">Tất cả</button>
         <button class="filter-btn" id="btnPending" onclick="setFilter('pending')">✗ Chưa thay</button>
         <button class="filter-btn" id="btnDone" onclick="setFilter('done')">✓ Đã thay</button>
+        <button class="filter-btn" id="btnPhoto" onclick="setFilter('photo')">📷 Có ảnh</button>
     </div>
 
     <div class="row">
@@ -95,6 +197,41 @@ label{font-size:13px;color:#555;margin-top:10px;display:block}
 </div>
 
 <div id="meterList"></div>
+
+<!-- Input ẩn cho camera / thư viện ảnh -->
+<input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+<input type="file" id="galleryInput" accept="image/*" multiple style="display:none">
+
+<!-- Xem ảnh phóng to -->
+<div id="lightbox" onclick="if(event.target.id==='lightbox')closeLightbox()">
+    <div id="lbInfo"></div>
+    <div id="lbImgWrap"><img id="lbImg" alt="Ảnh công tơ"></div>
+    <div id="lbBar">
+        <button class="primary" onclick="sharePhoto()">📤 Chia sẻ</button>
+        <button class="ghost" onclick="downloadPhoto()">⬇️ Tải về</button>
+        <button class="danger" onclick="deleteCurrentPhoto()">🗑 Xóa ảnh</button>
+        <button class="ghost" onclick="closeLightbox()">✖ Đóng</button>
+    </div>
+</div>
+
+<!-- Chọn kiểu import khi đã có dữ liệu -->
+<div id="importModal">
+    <div class="modal-box">
+        <h3 id="imTitle"></h3>
+        <p id="imDesc"></p>
+        <button class="success" onclick="resolveImportMode('merge')">
+            ➕ Gộp thêm vào danh sách
+            <span class="sub">Giữ nguyên trạng thái đã thay, ảnh và ghi chú. Dòng đã có thì cập nhật lại địa chỉ / mã trạm / tên KH.</span>
+        </button>
+        <button class="danger" onclick="resolveImportMode('replace')">
+            🗑 Xóa hết rồi import mới
+            <span class="sub">Mất toàn bộ dữ liệu và ảnh hiện có.</span>
+        </button>
+        <button class="ghost" onclick="resolveImportMode(null)">Huỷ</button>
+    </div>
+</div>
+
+<div id="toast"></div>
 
 <!-- Cache break: luon tai app.js ban moi nhat, khong dung ban cu trong cache -->
 <script>
