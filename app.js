@@ -441,17 +441,54 @@ function normalizeItem(item) {
 }
 
 /* ---------------------------- Import Excel ---------------------------- */
-function findHeader(headers, candidates) {
+/* `skip` là những cột đã bị ô chọn khác lấy mất — tránh hai ô cùng trỏ 1 cột */
+function findHeader(headers, candidates, skip) {
+    const free = headers.filter(h => !(skip || []).includes(h));
     for (const c of candidates) {
-        const found = headers.find(h => h === c || norm(h) === norm(c));
+        const found = free.find(h => h === c || norm(h) === norm(c));
         if (found) return found;
     }
     for (const c of candidates) {
         const nc = norm(c);
-        const found = headers.find(h => norm(h).includes(nc) || nc.includes(norm(h)));
+        if (!nc) continue;
+        const found = free.find(h => norm(h) && (norm(h).includes(nc) || nc.includes(norm(h))));
         if (found) return found;
     }
     return '';
+}
+
+/* Từ khoá để nhận ra đâu là dòng tên cột thật */
+const HEADER_HINTS = ['cong to', 'no moi', 'no cu', 'dia chi', 'ma tram', 'ten khach hang',
+                      'ma diem do', 'stt', 'so dien thoai', 'ten tram'];
+
+/* Nhiều file bắt đầu bằng một dòng tiêu đề gộp ô ("ĐỨC DIỄN 10 --- 121 CÔNG TƠ"),
+   tên cột thật nằm ở dòng 2 (hoặc dòng 3). Dò xem dòng nào mới là dòng tên cột:
+   dòng có nhiều ô và trùng nhiều từ khoá nhất. */
+function detectHeaderRow(matrix) {
+    let best = 0, bestScore = -1;
+    const look = Math.min(matrix.length, 15);
+    for (let i = 0; i < look; i++) {
+        const cells = (matrix[i] || []).map(c => String(c ?? '').trim()).filter(c => c !== '');
+        if (cells.length < 2) continue;          // dòng tiêu đề gộp ô chỉ có 1 ô
+        let score = cells.length;
+        cells.forEach(c => {
+            if (HEADER_HINTS.some(h => norm(c).includes(norm(h)))) score += 10;
+        });
+        if (score > bestScore) { bestScore = score; best = i; }
+    }
+    return best;
+}
+
+/* Tên cột: bỏ khoảng trắng thừa, ô trống thì đặt tên theo chữ cái cột, trùng thì đánh số */
+function buildHeaders(row) {
+    const headers = [];
+    (row || []).forEach((cell, i) => {
+        const base = String(cell ?? '').trim() || ('Cột ' + XLSX.utils.encode_col(i));
+        let name = base, k = 2;
+        while (headers.includes(name)) name = base + ' (' + (k++) + ')';
+        headers.push(name);
+    });
+    return headers;
 }
 
 function fillSelect(selId, headers, guessed) {
@@ -477,23 +514,49 @@ function onFileSelected(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            excelRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-            if (excelRows.length === 0) {
+            // Đọc thô cả bảng để tự tìm dòng tên cột, không mặc định là dòng 1
+            const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: true });
+            if (!matrix.length) {
                 alert('File Excel trống!');
                 return;
             }
 
-            excelHeaders = Object.keys(excelRows[0]);
+            const hIdx = detectHeaderRow(matrix);
+            excelHeaders = buildHeaders(matrix[hIdx]);
+            excelRows = matrix.slice(hIdx + 1)
+                .map(r => {
+                    const o = {};
+                    excelHeaders.forEach((h, i) => { o[h] = (r || [])[i] ?? ''; });
+                    return o;
+                })
+                .filter(o => excelHeaders.some(h => String(o[h]).trim() !== ''));
+
+            if (excelRows.length === 0) {
+                alert('File Excel không có dòng dữ liệu nào!');
+                return;
+            }
+
             document.getElementById('mapPanel').style.display = 'block';
 
-            const gXuong  = findHeader(excelHeaders, ['Công tơ', 'cong to', 'công tơ']);
-            const gLen    = findHeader(excelHeaders, ['công tơ mới', 'cong to moi', 'Công tơ mới', 'no mới']);
-            const gDiaChi = findHeader(excelHeaders, ['Địa chỉ', 'dia chi', 'Địa chỉ sử dụng điện', 'dia chi su dung dien']);
-            const gPhone  = findHeader(excelHeaders, ['SĐT', 'Số điện thoại', 'sdt', 'dienthoai', 'phone', 'Điện thoại', 'dien thoai', 'Tel', 'Mobile', 'Số DT', 'so dt', 'SĐT KH', 'sdt kh']);
-            const gMaTram = findHeader(excelHeaders, ['Mã trạm', 'ma tram', 'matram']);
-            const gTenTram= findHeader(excelHeaders, ['Tên khách hàng', 'ten khach hang', 'Tên trạm', 'ten tram']);
-            const gSTT    = findHeader(excelHeaders, ['số thứ tự', 'so thu tu', 'STT', 'stt']);
+            // Đoán cột "công tơ mới" trước, rồi mới tới công tơ cũ — nếu làm ngược,
+            // chữ "Công tơ" sẽ khớp luôn vào cột "Công tơ mới"
+            const gLen    = findHeader(excelHeaders, ['NO MOI', 'no mới', 'no moi', 'công tơ mới',
+                                                      'cong to moi', 'Công tơ mới', 'công tơ lên',
+                                                      'ct mới', 'no công tơ lên']);
+            const gXuong  = findHeader(excelHeaders, ['Công tơ', 'cong to', 'công tơ', 'no cũ',
+                                                      'công tơ cũ', 'cong to cu', 'công tơ xuống',
+                                                      'no công tơ xuống'], [gLen]);
+            const taken   = [gLen, gXuong];
+            const gDiaChi = findHeader(excelHeaders, ['Địa chỉ', 'dia chi', 'Địa chỉ sử dụng điện', 'dia chi su dung dien'], taken);
+            taken.push(gDiaChi);
+            const gPhone  = findHeader(excelHeaders, ['SĐT', 'Số điện thoại', 'sdt', 'dienthoai', 'phone', 'Điện thoại', 'dien thoai', 'Tel', 'Mobile', 'Số DT', 'so dt', 'SĐT KH', 'sdt kh'], taken);
+            taken.push(gPhone);
+            const gMaTram = findHeader(excelHeaders, ['Mã trạm', 'ma tram', 'matram'], taken);
+            taken.push(gMaTram);
+            const gTenTram= findHeader(excelHeaders, ['Tên khách hàng', 'ten khach hang', 'Tên trạm', 'ten tram'], taken);
+            taken.push(gTenTram);
+            const gSTT    = findHeader(excelHeaders, ['số thứ tự', 'so thu tu', 'STT', 'stt'], taken);
 
             fillSelect('selXuong',  excelHeaders, gXuong);
             fillSelect('selLen',    excelHeaders, gLen);
